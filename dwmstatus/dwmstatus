@@ -1,0 +1,75 @@
+#!/bin/bash
+
+# Set the status window for dwm using xsetroot
+# Displays the following information:
+#   - date and time
+#   - battery level/status
+#   - RAM Usage
+#   - Disk usage
+#   - Network status
+#   - Current CPU frequency
+#
+# Functions borrowed heavily from w0ng and jasonwryan
+#   - http://archlinux.me/w0ng/2012/05/01/dwm-a-pretty-statusbar.
+#   - https://bitbucket.org/jasonwryan/eeepc/src/241da582a0fd/Scripts/dwm-status
+
+dt() {
+    date="$(date +'%a %b %d %I:%M:%S %p')"
+    echo -e "$date"
+}
+
+disk() {
+    # df is slow.... why?
+    hd="$(df -P | awk '/^\/dev\/sda/{u+=$3;a+=$4} END {printf "%.1f", (a - u)/2^20}')"
+    echo -e "$hd"
+}
+
+ram() {
+    ram="$(free -m | awk '/^-/ {print $3}')"
+    echo -e "$ram MB"
+}
+
+network() {
+    net="$(iwconfig wlan0 | awk 'BEGIN {FS=":"} /^wlan0/ {gsub(/\"/,"",$2);gsub(/[ \t]+$/,"",$2);print $2}')"
+    echo -e "$net"
+}
+
+bat() {
+    bat="$(acpi | awk '{print +$4}')"
+    discharging="$(acpi | grep 'Discharging')"
+
+    if [ -z "$discharging" ]; then
+        echo -e "+$bat%"
+    else
+        echo -e "$bat%"
+    fi
+}
+
+cpu() {
+    read cpu a b c previdle rest < /proc/stat
+    prevtotal=$((a + b + c + previdle))
+    sleep 0.5
+    read cpu a b c idle rest < /proc/stat
+    total="$((a + b + c + idle))"
+
+    cpu="$((100*( (total-prevtotal) - (idle-previdle) ) / (total-prevtotal) ))"
+    echo -e "$cpu%"
+}
+
+
+
+# do it
+while true; do
+    eval $(awk '/^cpu /{print "cpu_idle_now=" $5 "; cpu_total_now=" $2+$3+$4+$5 }' /proc/stat)
+    cpu_interval=$((cpu_total_now-${cpu_total_old:-0}))
+    let cpu_used="100 * ($cpu_interval - ($cpu_idle_now-${cpu_idle_old:-0})) / $cpu_interval"
+   
+    # disk space excluded right now because for some reason it
+    # takes kind of a long time? need to investigate ...
+    xsetroot -name "(cpu: ${cpu_used}%) (bat: $(bat)) (net: $(network)) (mem: $(ram)) ($(dt))"
+
+    cpu_total_old=$cpu_total_now
+    cpu_idle_old=$cpu_idle_now
+
+    sleep 1
+done
